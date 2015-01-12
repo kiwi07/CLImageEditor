@@ -24,7 +24,7 @@
 
 + (NSString*)defaultTitle
 {
-    return NSLocalizedStringWithDefaultValue(@"CLFilterTool_DefaultTitle", nil, [CLImageEditorTheme bundle], @"Filter", @"");
+    return [CLImageEditorTheme localizedString:@"CLFilterTool_DefaultTitle" withDefault:@"Filter"];
 }
 
 + (BOOL)isAvailable
@@ -73,7 +73,7 @@
     CGFloat W = 70;
     CGFloat x = 0;
     
-    UIImage *iconThumnail = [_originalImage aspectFill:CGSizeMake(50, 50)];
+    UIImage *iconThumbnail = [_originalImage aspectFill:CGSizeMake(50, 50)];
     
     for(CLImageToolInfo *info in self.toolInfo.sortedSubtools){
         if(!info.available){
@@ -86,7 +86,7 @@
         
         if(view.iconImage==nil){
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                UIImage *iconImage = [self filteredImage:iconThumnail withToolInfo:info];
+                UIImage *iconImage = [self filteredImage:iconThumbnail withToolInfo:info];
                 [view performSelectorOnMainThread:@selector(setIconImage:) withObject:iconImage waitUntilDone:NO];
             });
         }
@@ -96,6 +96,11 @@
 
 - (void)tappedFilterPanel:(UITapGestureRecognizer*)sender
 {
+    static BOOL inProgress = NO;
+    
+    if(inProgress){ return; }
+    inProgress = YES;
+    
     UIView *view = sender.view;
     
     view.alpha = 0.2;
@@ -108,6 +113,7 @@
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         UIImage *image = [self filteredImage:_originalImage withToolInfo:view.toolInfo];
         [self.editor.imageView performSelectorOnMainThread:@selector(setImage:) withObject:image waitUntilDone:NO];
+        inProgress = NO;
     });
 }
 

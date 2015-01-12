@@ -9,10 +9,14 @@
 
 static NSString* const kCLResizeToolPresetSizes = @"presetSizes";
 static NSString* const kCLResizeToolLimitSize = @"limitSize";
+static NSString* const kCLResizeToolHorizontalIconName = @"horizontalIconAssetsName";
+static NSString* const kCLResizeToolVerticalIconName = @"verticalIconAssetsName";
+static NSString* const kCLResizeToolChainOnIconName = @"chainOnIconAssetsName";
+static NSString* const kCLResizeToolChainOffIconName = @"chainOffIconAssetsName";
 
 @interface _CLResizePanel : UIView
 <UITextFieldDelegate>
-- (id)initWithFrame:(CGRect)frame originalSize:(CGSize)size;
+- (id)initWithFrame:(CGRect)frame originalSize:(CGSize)size tool:(CLResizeTool*)tool;
 - (void)setImageWidth:(CGFloat)width;
 - (void)setImageHeight:(CGFloat)height;
 - (void)setLimitSize:(CGFloat)limit;
@@ -37,7 +41,7 @@ static NSString* const kCLResizeToolLimitSize = @"limitSize";
 
 + (NSString*)defaultTitle
 {
-    return NSLocalizedStringWithDefaultValue(@"CLResizeTool_DefaultTitle", nil, [CLImageEditorTheme bundle], @"Resize", @"");
+    return [CLImageEditorTheme localizedString:@"CLResizeTool_DefaultTitle" withDefault:@"Resize"];
 }
 
 + (BOOL)isAvailable
@@ -64,7 +68,14 @@ static NSString* const kCLResizeToolLimitSize = @"limitSize";
 
 + (NSDictionary*)optionalInfo
 {
-    return @{kCLResizeToolPresetSizes:[self defaultPresetSizes], kCLResizeToolLimitSize:[self defaultLimitSize]};
+    return @{
+             kCLResizeToolPresetSizes:[self defaultPresetSizes],
+             kCLResizeToolLimitSize:[self defaultLimitSize],
+             kCLResizeToolHorizontalIconName:@"",
+             kCLResizeToolVerticalIconName:@"",
+             kCLResizeToolChainOnIconName:@"",
+             kCLResizeToolChainOffIconName:@"",
+             };
 }
 
 #pragma mark- implementation
@@ -91,13 +102,14 @@ static NSString* const kCLResizeToolLimitSize = @"limitSize";
     
     _switchBtn = [CLImageEditorTheme menuItemWithFrame:CGRectMake(0, 0, 70, btnPanel.height) target:self action:@selector(pushedSwitchBtn:) toolInfo:nil];
     _switchBtn.tag = 0;
-    _switchBtn.iconImage = [CLImageEditorTheme imageNamed:[NSString stringWithFormat:@"%@/btn_width.png", [self class]]];
+	
+    _switchBtn.iconImage = [self imageForKey:kCLResizeToolHorizontalIconName defaultImageName:@"btn_width.png"];
     [btnPanel addSubview:_switchBtn];
     
     NSNumber *limit = self.toolInfo.optionalInfo[kCLResizeToolLimitSize];
     if(limit==nil){ limit = [self.class defaultLimitSize]; }
     
-    _resizePanel = [[_CLResizePanel alloc] initWithFrame:self.editor.imageView.superview.frame originalSize:_originalImage.size];
+    _resizePanel = [[_CLResizePanel alloc] initWithFrame:self.editor.imageView.superview.frame originalSize:_originalImage.size tool:self];
     _resizePanel.backgroundColor = [[CLImageEditorTheme toolbarColor] colorWithAlphaComponent:0.4];
     [_resizePanel setLimitSize:limit.floatValue];
     [self.editor.view addSubview:_resizePanel];
@@ -152,14 +164,15 @@ static NSString* const kCLResizeToolLimitSize = @"limitSize";
 - (UIImage*)imageWithString:(NSString*)str
 {
     UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
-    label.backgroundColor = [UIColor colorWithWhite:0 alpha:1];
-    label.textColor = [UIColor colorWithWhite:1 alpha:1];
     label.textAlignment = NSTextAlignmentCenter;
     label.text = str;
     label.font = [UIFont boldSystemFontOfSize:30];
     label.minimumScaleFactor = 0.5;
     
-    UIGraphicsBeginImageContext(label.frame.size);
+    label.backgroundColor = [[CLImageEditorTheme theme] toolbarTextColor];
+    label.textColor = [[CLImageEditorTheme theme] toolbarColor];
+    
+    UIGraphicsBeginImageContextWithOptions(label.frame.size, NO, 0.0);
     [label.layer renderInContext:UIGraphicsGetCurrentContext()];
     UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
@@ -193,11 +206,11 @@ static NSString* const kCLResizeToolLimitSize = @"limitSize";
 {
     if(_switchBtn.tag==0){
         _switchBtn.tag = 1;
-        _switchBtn.iconImage = [CLImageEditorTheme imageNamed:[NSString stringWithFormat:@"%@/btn_height.png", [self class]]];
+        _switchBtn.iconImage = [self imageForKey:kCLResizeToolVerticalIconName defaultImageName:@"btn_height.png"];
     }
     else{
         _switchBtn.tag = 0;
-        _switchBtn.iconImage = [CLImageEditorTheme imageNamed:[NSString stringWithFormat:@"%@/btn_width.png", [self class]]];
+        _switchBtn.iconImage = [self imageForKey:kCLResizeToolHorizontalIconName defaultImageName:@"btn_width.png"];
     }
     
     _switchBtn.alpha = 0.2;
@@ -252,7 +265,7 @@ static NSString* const kCLResizeToolLimitSize = @"limitSize";
 {
     self = [super initWithFrame:frame];
     if(self){
-        _infoPanel = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 300, 180)];
+        _infoPanel = [[UIView alloc] initWithFrame:CGRectMake(0, 0, frame.size.width*0.85, 180)];
         _infoPanel.backgroundColor = [[CLImageEditorTheme toolbarColor] colorWithAlphaComponent:0.9];
         _infoPanel.layer.cornerRadius = 5;
         _infoPanel.center = CGPointMake(self.width/2, self.height/2);
@@ -271,40 +284,44 @@ static NSString* const kCLResizeToolLimitSize = @"limitSize";
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
-- (id)initWithFrame:(CGRect)frame originalSize:(CGSize)size;
+- (id)initWithFrame:(CGRect)frame originalSize:(CGSize)size tool:(CLResizeTool *)tool
 {
     self = [self initWithFrame:frame];
     if(self){
         _originalSize = size;
-        [self initInfoPanel];
+        [self initInfoPanelWithTool:tool];
     }
     return self;
 }
 
-- (void)initInfoPanel
+- (void)initInfoPanelWithTool:(CLResizeTool*)tool
 {
     UIFont *font = [CLImageEditorTheme toolbarTextFont];
     
     CGFloat y = 0;
     UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(10, 5, _infoPanel.width-20, 30)];
+	[label setTextColor:[CLImageEditorTheme toolbarTextColor]];
     label.backgroundColor = [UIColor clearColor];
     label.font = [font fontWithSize:17];
-    label.text = NSLocalizedStringWithDefaultValue(@"CLResizeTool_InfoPanelTextOriginalSize", nil, [CLImageEditorTheme bundle], @"Original Image Size:", @"");
+    
+    label.text = [CLImageEditorTheme localizedString:@"CLResizeTool_InfoPanelTextOriginalSize" withDefault:@"Original Image Size:"];
     [_infoPanel addSubview:label];
     y = label.bottom;
     
     label = [[UILabel alloc] initWithFrame:CGRectMake(10, y, _infoPanel.width-20, 50)];
+	[label setTextColor:[CLImageEditorTheme toolbarTextColor]];
     label.backgroundColor = [UIColor clearColor];
     label.font = [font fontWithSize:30];
     label.text = [NSString stringWithFormat:@"%ld x %ld", (long)_originalSize.width, (long)_originalSize.height];
     label.textAlignment = NSTextAlignmentCenter;
     [_infoPanel addSubview:label];
-    y = label.bottom;
+    //y = label.bottom;
     
     label = [[UILabel alloc] initWithFrame:CGRectMake(10, _infoPanel.height/2, _infoPanel.width-20, 30)];
+	[label setTextColor:[CLImageEditorTheme toolbarTextColor]];
     label.backgroundColor = [UIColor clearColor];
     label.font = [font fontWithSize:17];
-    label.text = NSLocalizedStringWithDefaultValue(@"CLResizeTool_InfoPanelTextNewSize", nil, [CLImageEditorTheme bundle], @"New Image Size:", @"");
+    label.text = [CLImageEditorTheme localizedString:@"CLResizeTool_InfoPanelTextNewSize" withDefault:@"New Image Size:"];
     [_infoPanel addSubview:label];
     y = label.bottom;
     /*
@@ -318,27 +335,32 @@ static NSString* const kCLResizeToolLimitSize = @"limitSize";
     _chainBtn = [UIButton buttonWithType:UIButtonTypeCustom];
     _chainBtn.frame = CGRectMake(0, 0, 35, 35);
     _chainBtn.center = CGPointMake(label.center.x, y + 25);
-    [_chainBtn setImage:[CLImageEditorTheme imageNamed:@"CLResizeTool/btn_chain_off.png"] forState:UIControlStateNormal];
-    [_chainBtn setImage:[CLImageEditorTheme imageNamed:@"CLResizeTool/btn_chain_on.png"] forState:UIControlStateSelected];
+	
+    [_chainBtn setImage:[tool imageForKey:kCLResizeToolChainOffIconName defaultImageName:@"btn_chain_off.png"] forState:UIControlStateNormal];
+    [_chainBtn setImage:[tool imageForKey:kCLResizeToolChainOnIconName defaultImageName:@"btn_chain_on.png"] forState:UIControlStateSelected];
     [_chainBtn addTarget:self action:@selector(chainBtnDidPush:) forControlEvents:UIControlEventTouchUpInside];
     _chainBtn.selected = YES;
     [_infoPanel addSubview:_chainBtn];
     
-    _fieldW = [[UITextField alloc] initWithFrame:CGRectMake(30, y+5, 100, 40)];
+    _fieldW = [[UITextField alloc] initWithFrame:CGRectMake(_chainBtn.left - 110, y+5, 100, 40)];
+	[_fieldW setTextColor:[CLImageEditorTheme toolbarTextColor]];
     _fieldW.font = [font fontWithSize:30];
     _fieldW.textAlignment = NSTextAlignmentCenter;
     _fieldW.keyboardType = UIKeyboardTypeNumberPad;
-    _fieldW.borderStyle = UITextBorderStyleLine;
+    _fieldW.layer.borderWidth = 1;
+    _fieldW.layer.borderColor = [[[CLImageEditorTheme theme] toolbarTextColor] CGColor];
     _fieldW.text = [NSString stringWithFormat:@"%ld", (long)_originalSize.width];
     _fieldW.delegate = self;
     [_fieldW addTarget:self action:@selector(textFieldDidChanged:) forControlEvents:UIControlEventEditingChanged];
     [_infoPanel addSubview:_fieldW];
     
-    _fieldH = [[UITextField alloc] initWithFrame:CGRectMake(_infoPanel.center.x + 10, y+5, 100, 40)];
+    _fieldH = [[UITextField alloc] initWithFrame:CGRectMake(_chainBtn.right + 10, y+5, 100, 40)];
+	[_fieldH setTextColor:[CLImageEditorTheme toolbarTextColor]];
     _fieldH.font = [font fontWithSize:30];
     _fieldH.textAlignment = NSTextAlignmentCenter;
     _fieldH.keyboardType = UIKeyboardTypeNumberPad;
-    _fieldH.borderStyle = UITextBorderStyleLine;
+    _fieldH.layer.borderWidth = 1;
+    _fieldH.layer.borderColor = _fieldW.layer.borderColor;
     _fieldH.text = [NSString stringWithFormat:@"%ld", (long)_originalSize.height];
     _fieldH.delegate = self;
     [_fieldH addTarget:self action:@selector(textFieldDidChanged:) forControlEvents:UIControlEventEditingChanged];
